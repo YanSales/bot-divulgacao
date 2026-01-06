@@ -1,0 +1,93 @@
+# ============================================
+# Bot de Divulgação - Requirements
+# Python 3.11.9
+# ============================================
+
+# Web Framework & API
+fastapi==0.104.1
+starlette==0.27.0
+uvicorn[standard]==0.24.0
+pydantic==2.11.7
+pydantic-settings==2.6.1
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+
+# Dashboard
+streamlit==1.29.0
+plotly==5.18.0
+pandas==2.1.4
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.0
+psycopg2-binary==2.9.9
+aiosqlite==0.19.0
+
+# Cache & Queue
+redis==5.0.1
+celery==5.3.4
+
+# Social Media APIs
+instagrapi==2.2.1
+facebook-sdk==3.1.0
+tweepy==4.14.0
+TikTokApi==6.0.0
+google-api-python-client==2.108.0
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+twilio==8.10.3
+
+# HTTP
+requests==2.32.4
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Scheduling
+APScheduler==3.10.4
+
+# Azure
+azure-storage-blob==12.19.0
+azure-identity==1.15.0
+opencensus-ext-azure==1.1.13
+
+# Image & Video
+Pillow==10.1.0
+opencv-python==4.8.1.78
+
+# Data Processing
+openpyxl==3.1.2
+python-dateutil==2.8.2
+
+# Security
+cryptography==41.0.7
+python-dotenv==1.0.0
+email-validator==2.1.0
+
+# NLP
+numpy==1.26.4
+spacy==3.6.1
+textblob==0.17.1
+
+# Utilities
+python-slugify==8.0.1
+pytz==2023.3.post1
+colorlog==6.8.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+faker==20.1.0
+
+# Dev Tools
+black==23.12.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.6.0
+
+# Monitoring
+structlog==23.2.0
+sentry-sdk[fastapi]==1.39.1
+
+# Rate Limiting
+slowapi==0.1.9
