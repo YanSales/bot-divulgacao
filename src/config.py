@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     FACEBOOK_APP_ID: Optional[str] = None
     FACEBOOK_APP_SECRET: Optional[str] = None
     FACEBOOK_PAGE_ID: Optional[str] = None
-    FACEBOOK_PAGE_ACCESS_TOKEN: Optional[str] = None
+    FACEBOOK_USER_ACCESS_TOKEN: Optional[str] = None
     
     # Twitter
     TWITTER_API_KEY: Optional[str] = None
@@ -150,7 +150,7 @@ settings = Settings()
 # Configurações de plataformas habilitadas
 ENABLED_PLATFORMS = {
     'instagram': bool(settings.INSTAGRAM_ACCESS_TOKEN),
-    'facebook': bool(settings.FACEBOOK_PAGE_ACCESS_TOKEN),
+    'facebook': bool(settings.FACEBOOK_USER_ACCESS_TOKEN),
     'twitter': bool(settings.TWITTER_API_KEY),
     'tiktok': settings.TIKTOK_ENABLED and bool(settings.TIKTOK_ACCESS_TOKEN),
     'youtube': bool(settings.YOUTUBE_CLIENT_ID),
