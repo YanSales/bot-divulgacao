@@ -1,59 +1,63 @@
 """
-Configuração do banco de dados com SQLAlchemy
+Configuração do banco de dados com SQLAlchemy (compatível com SQLAlchemy 2.x)
 """
-from sqlalchemy import create_engine, event
+from contextlib import contextmanager
+from typing import Generator
+
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
-from contextlib import contextmanager
-from typing import Generator
 
 from src.config import settings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Base para os models
+# ==========================================================
+# BASE
+# ==========================================================
 Base = declarative_base()
 
-# Configuração da engine
+# ==========================================================
+# ENGINE
+# ==========================================================
 if settings.DATABASE_URL.startswith("sqlite"):
-    # SQLite: configurações específicas
     engine = create_engine(
         settings.DATABASE_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
         echo=settings.DEBUG,
+        future=True,
     )
-    
-    # Habilitar foreign keys no SQLite
+
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 else:
-    # PostgreSQL: configurações de pool
     engine = create_engine(
         settings.DATABASE_URL,
         pool_size=10,
         max_overflow=20,
         pool_pre_ping=True,
         echo=settings.DEBUG,
+        future=True,
     )
 
-# Session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# ==========================================================
+# SESSION
+# ==========================================================
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    future=True,
+)
 
 
 def get_db() -> Generator[Session, None, None]:
-    """
-    Dependency para obter sessão do banco de dados
-    Usado com FastAPI Depends
-    
-    Yields:
-        Session do SQLAlchemy
-    """
     db = SessionLocal()
     try:
         yield db
@@ -63,13 +67,6 @@ def get_db() -> Generator[Session, None, None]:
 
 @contextmanager
 def get_db_context():
-    """
-    Context manager para usar sessão do banco
-    
-    Uso:
-        with get_db_context() as db:
-            db.query(Model).all()
-    """
     db = SessionLocal()
     try:
         yield db
@@ -82,95 +79,80 @@ def get_db_context():
         db.close()
 
 
+# ==========================================================
+# INIT / DROP
+# ==========================================================
 def init_db() -> None:
-    """
-    Inicializa o banco de dados
-    Cria todas as tabelas definidas nos models
-    """
     logger.info("Inicializando banco de dados...")
-    
-    # Import todos os models aqui para que sejam registrados
-    from src.models import post, lead, interaction, metrics
-    
-    # Criar todas as tabelas
+
+    from src.models import post, lead, interaction, metrics  # noqa
+
     Base.metadata.create_all(bind=engine)
-    
+
     logger.info("Banco de dados inicializado com sucesso!")
 
 
 def drop_db() -> None:
-    """
-    Remove todas as tabelas do banco
-    ⚠️ CUIDADO: Apenas para desenvolvimento/testes
-    """
     if settings.is_production:
         raise RuntimeError("Não é permitido dropar banco em produção!")
-    
+
     logger.warning("Removendo todas as tabelas do banco...")
     Base.metadata.drop_all(bind=engine)
     logger.info("Tabelas removidas!")
 
 
+# ==========================================================
+# HEALTH CHECK
+# ==========================================================
 class DatabaseHealthCheck:
     """Verifica saúde da conexão com o banco"""
-    
+
     @staticmethod
     def check() -> bool:
-        """
-        Verifica se o banco está acessível
-        
-        Returns:
-            True se conectado, False caso contrário
-        """
         try:
             with get_db_context() as db:
-                db.execute("SELECT 1")
+                db.execute(text("SELECT 1"))
             return True
         except Exception as e:
             logger.error("Health check do banco falhou", error=str(e))
             return False
-    
+
     @staticmethod
     def get_status() -> dict:
-        """
-        Retorna status detalhado do banco
-        
-        Returns:
-            Dict com informações do banco
-        """
         try:
             with get_db_context() as db:
-                # Verificar conexão
-                db.execute("SELECT 1")
-                
-                # Obter algumas estatísticas
+                # ⚠️ SQLAlchemy 2.x exige text()
+                db.execute(text("SELECT 1"))
+
                 from src.models.post import Post
                 from src.models.lead import Lead
-                
+
                 total_posts = db.query(Post).count()
                 total_leads = db.query(Lead).count()
-                
+
                 return {
                     "status": "healthy",
                     "database": settings.DATABASE_URL.split("://")[0],
                     "stats": {
                         "total_posts": total_posts,
                         "total_leads": total_leads,
-                    }
+                    },
                 }
+
         except Exception as e:
+            logger.error("Erro no banco de dados", error=str(e))
             return {
                 "status": "unhealthy",
-                "error": str(e)
+                "error": str(e),
             }
 
 
-# Exemplo de uso
+# ==========================================================
+# TESTE LOCAL
+# ==========================================================
 if __name__ == "__main__":
-    # Inicializar banco
     init_db()
-    
-    # Verificar saúde
+
     health = DatabaseHealthCheck()
     print(f"Database healthy: {health.check()}")
     print(f"Database status: {health.get_status()}")
