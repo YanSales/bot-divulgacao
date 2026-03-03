@@ -4,13 +4,13 @@ Gerenciador de comentários automáticos e CRUD interno de comentários
 from typing import List, Optional, Dict
 from datetime import datetime
 from uuid import uuid4
-
 from sqlalchemy import text
 
 from src.database import get_db_context
 from src.integrations.factory import AdapterFactory
 from src.utils.logger import get_logger
 from src.config import settings
+from src.dtos.comment_dto import CommentDTO
 
 logger = get_logger(__name__)
 
@@ -24,16 +24,22 @@ class CommentManager:
         self.rate_limit_counter = {}
 
     # ==========================================================
-    # ADAPTER
+    # Helpers
     # ==========================================================
 
-    def _get_adapter(self, platform: str):
-        if platform not in self.adapters:
-            self.adapters[platform] = AdapterFactory.create(platform)
-        return self.adapters[platform]
+    def _to_dto(self, row) -> CommentDTO:
+        return CommentDTO(
+            uuid=row[0],
+            post_uuid=row[1],
+            content=row[2],
+            status=row[3],
+            created_at=row[4],
+            created_by=row[5],
+            platform="internal",
+        )
 
     # ==========================================================
-    # CRUD INTERNO DE COMMENTS (API)
+    # CRUD INTERNO
     # ==========================================================
 
     def create_comment(
@@ -41,11 +47,7 @@ class CommentManager:
         post_uuid: str,
         texto: str,
         criado_por: str,
-    ):
-        """
-        Cria um comentário interno vinculado a um post
-        Usado pelo endpoint /comments
-        """
+    ) -> Optional[CommentDTO]:
         try:
             with get_db_context() as db:
                 comment_uuid = str(uuid4())
@@ -80,16 +82,14 @@ class CommentManager:
 
                 db.commit()
 
-                return type(
-                    "Comment",
-                    (),
-                    {
-                        "uuid": comment_uuid,
-                        "post_uuid": post_uuid,
-                        "texto": texto,
-                        "status": "PENDING",
-                        "criado_em": now,
-                    },
+                return CommentDTO(
+                    uuid=comment_uuid,
+                    post_uuid=post_uuid,
+                    content=texto,
+                    status="PENDING",
+                    created_at=now,
+                    created_by=criado_por,
+                    platform="internal",
                 )
 
         except Exception as e:
@@ -97,7 +97,37 @@ class CommentManager:
             return None
 
     # ==========================================================
-    # ANÁLISE DE COMENTÁRIOS
+    # LISTAGEM (Dashboard)
+    # ==========================================================
+
+    def get_pending_comments(self, limit: int = 20) -> List[CommentDTO]:
+        try:
+            with get_db_context() as db:
+                result = db.execute(
+                    text("""
+                        SELECT
+                            uuid,
+                            post_uuid,
+                            texto,
+                            status,
+                            criado_em,
+                            criado_por
+                        FROM comments
+                        WHERE status = 'PENDING'
+                        ORDER BY criado_em DESC
+                        LIMIT :limit
+                    """),
+                    {"limit": limit}
+                ).fetchall()
+
+                return [self._to_dto(row) for row in result]
+
+        except Exception as e:
+            logger.error("Erro ao buscar comentários pendentes", error=str(e))
+            return []
+
+    # ==========================================================
+    # ANÁLISE
     # ==========================================================
 
     def analyze_comment(self, comment_text: str) -> Dict:
@@ -137,44 +167,6 @@ class CommentManager:
         }
 
     # ==========================================================
-    # AUTO RESPONSE
-    # ==========================================================
-
-    def get_auto_response(self, category: str) -> Optional[str]:
-        try:
-            with get_db_context() as db:
-                result = db.execute(
-                    text("""
-                        SELECT resposta
-                        FROM faq_respostas
-                        WHERE categoria = :category
-                        AND ativo = 1
-                        ORDER BY vezes_usado ASC
-                        LIMIT 1
-                    """),
-                    {"category": category},
-                ).fetchone()
-
-                if not result:
-                    return None
-
-                db.execute(
-                    text("""
-                        UPDATE faq_respostas
-                        SET vezes_usado = vezes_usado + 1
-                        WHERE categoria = :category
-                    """),
-                    {"category": category},
-                )
-
-                db.commit()
-                return result[0]
-
-        except Exception as e:
-            logger.error("Erro ao buscar resposta automática", error=str(e))
-            return None
-
-    # ==========================================================
     # RATE LIMIT
     # ==========================================================
 
@@ -194,83 +186,3 @@ class CommentManager:
             return False
 
         return True
-
-    # ==========================================================
-    # INTERAÇÕES
-    # ==========================================================
-
-    def is_already_replied(self, comment_id: str, platform: str) -> bool:
-        try:
-            with get_db_context() as db:
-                result = db.execute(
-                    text("""
-                        SELECT COUNT(*)
-                        FROM interacoes_usuarios
-                        WHERE usuario_id_externo = :comment_id
-                        AND plataforma = :platform
-                        AND respondido = 1
-                    """),
-                    {"comment_id": comment_id, "platform": platform},
-                ).fetchone()
-
-                return result[0] > 0
-
-        except Exception as e:
-            logger.error("Erro ao verificar resposta", error=str(e))
-            return False
-
-    def save_interaction(
-        self,
-        platform: str,
-        user_id: str,
-        username: str,
-        comment_text: str,
-        comment_id: str,
-        post_uuid: Optional[str] = None,
-        auto_response: Optional[str] = None,
-        sentiment: str = "neutral",
-    ):
-        try:
-            with get_db_context() as db:
-                db.execute(
-                    text("""
-                        INSERT INTO interacoes_usuarios (
-                            plataforma,
-                            usuario_id_externo,
-                            username,
-                            tipo_interacao,
-                            post_uuid,
-                            conteudo,
-                            timestamp,
-                            respondido,
-                            resposta_automatica,
-                            sentimento
-                        ) VALUES (
-                            :platform,
-                            :user_id,
-                            :username,
-                            'comment',
-                            :post_uuid,
-                            :content,
-                            :timestamp,
-                            :respondido,
-                            :response,
-                            :sentiment
-                        )
-                    """),
-                    {
-                        "platform": platform,
-                        "user_id": user_id,
-                        "username": username,
-                        "post_uuid": post_uuid,
-                        "content": comment_text,
-                        "timestamp": datetime.utcnow(),
-                        "respondido": 1 if auto_response else 0,
-                        "response": auto_response,
-                        "sentiment": sentiment,
-                    },
-                )
-                db.commit()
-
-        except Exception as e:
-            logger.error("Erro ao salvar interação", error=str(e))

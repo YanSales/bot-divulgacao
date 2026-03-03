@@ -212,6 +212,36 @@ class QueueManager:
             logger.error("Erro ao cancelar post", error=str(e))
             return False
 
+    def delete_post(self, post_uuid: str, deletado_por: str) -> bool:
+        try:
+            with get_db_context() as db:
+                post = db.query(Post).filter(Post.uuid == post_uuid).first()
+                if not post:
+                    return False
+
+                if post.status == PostStatus.PUBLISHED:
+                    return False
+
+                db.delete(post)
+                db.commit()
+
+                audit_logger.log(
+                    action="DELETE_POST",
+                    user=deletado_por,
+                    details={"post_uuid": post_uuid}
+                )
+
+                logger.info(
+                    "Post deletado da fila",
+                    post_uuid=post_uuid
+                )
+
+                return True
+
+        except Exception as e:
+            logger.error("Erro ao deletar post", error=str(e))
+            return False
+
     # ------------------------------------------------------------------
     # Status
     # ------------------------------------------------------------------

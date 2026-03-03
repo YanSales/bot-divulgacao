@@ -1,11 +1,10 @@
-"""
-Dashboard principal do Bot de Divulgação
-"""
+""" Dashboard principal do Bot de Divulgação """
+
 import streamlit as st
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta
-import time
+from zoneinfo import ZoneInfo
 
 # Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -13,10 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.config import settings, ENABLED_PLATFORMS
 from src.services.queue_manager import QueueManager
 from src.services.comment_manager import CommentManager
-from src.dashboard.services import (
-    get_recent_posts,
-    get_posts
-)
+from src.dashboard.services import get_recent_posts, get_posts
 
 # =============================
 # Configuração da página
@@ -28,31 +24,29 @@ st.set_page_config(
 )
 
 # =============================
-# Dark Mode Customizado
+# Dark Mode Refinado
 # =============================
-st.markdown(
-    """
-    <style>
-    body {
-        background-color: #0f1117;
-        color: #e6e6e6;
-    }
-    .stApp {
-        background-color: #0f1117;
-    }
-    div[data-testid="stMetric"] {
-        background-color: #1a1c24;
-        padding: 16px;
-        border-radius: 12px;
-    }
-    div[data-testid="stExpander"] {
-        background-color: #1a1c24;
-        border-radius: 12px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("""
+<style>
+body { background-color: #0f1117; color: #e6e6e6; }
+.stApp { background-color: #0f1117; }
+div[data-testid="stMetric"] {
+    background-color: #1a1c24;
+    padding: 16px;
+    border-radius: 12px;
+}
+div[data-testid="stExpander"] {
+    background-color: #1a1c24;
+    border-radius: 12px;
+}
+.kanban-card {
+    background-color: #1a1c24;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =============================
 # Serviços
@@ -73,6 +67,13 @@ def show_sidebar():
         st.markdown("# 🤖 Bot de Divulgação")
         st.markdown("---")
 
+        st.markdown("### 🌎 Timezone")
+        timezone = st.selectbox(
+            "Fuso horário",
+            ["America/Sao_Paulo", "UTC"],
+            index=0
+        )
+
         st.markdown("### ℹ️ Sistema")
         st.info(
             f"Ambiente: {settings.ENVIRONMENT}\n\n"
@@ -85,10 +86,12 @@ def show_sidebar():
 
         st.markdown("---")
 
-        return st.radio(
+        menu = st.radio(
             "Menu",
             ["Dashboard", "Posts", "Comentários", "Configurações"]
         )
+
+    return menu, timezone
 
 # =============================
 # Dashboard
@@ -105,7 +108,6 @@ def show_dashboard():
     col4.metric("Publicados", status.get("published", 0))
 
     st.markdown("### 📝 Posts Recentes")
-
     posts = get_recent_posts()
 
     if not posts:
@@ -119,9 +121,34 @@ def show_dashboard():
             st.write(post["descricao"] or "")
 
 # =============================
+# Kanban
+# =============================
+def render_kanban(posts):
+    st.markdown("## 📌 Visão Kanban")
+
+    cols = st.columns(4)
+    status_map = ["pending", "approved", "published", "failed"]
+
+    for idx, status in enumerate(status_map):
+        with cols[idx]:
+            st.markdown(f"### {status.upper()}")
+            for post in posts:
+                if post["status"] == status:
+                    st.markdown(
+                        f"""
+                        <div class="kanban-card">
+                        <strong>{post['titulo'] or 'Sem título'}</strong><br>
+                        {post['plataforma']}<br>
+                        {post['horario_agendado'].strftime('%d/%m %H:%M')}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+# =============================
 # Posts
 # =============================
-def show_posts():
+def show_posts(timezone):
     st.title("📝 Gerenciar Posts")
 
     tab_list, tab_create = st.tabs(["📋 Lista", "➕ Criar Post"])
@@ -130,37 +157,20 @@ def show_posts():
     # LISTA
     # =========================
     with tab_list:
-        col1, col2 = st.columns(2)
 
-        with col1:
-            status_filter = st.selectbox(
-                "Status",
-                ["Todos", "pending", "approved", "published", "failed", "cancelled"]
-            )
+        posts = get_posts()
+        render_kanban(posts)
 
-        with col2:
-            plataforma_filter = st.selectbox(
-                "Plataforma",
-                ["Todas"] + list(ENABLED_PLATFORMS.keys())
-            )
-
-        posts = get_posts(
-            status=None if status_filter == "Todos" else status_filter,
-            plataforma=None if plataforma_filter == "Todas" else plataforma_filter.lower()
-        )
-
-        st.caption(f"Total: {len(posts)}")
+        st.markdown("---")
 
         for post in posts:
             with st.container(border=True):
+
                 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
 
                 with col1:
                     st.markdown(f"### {post['titulo'] or 'Sem título'}")
                     st.caption((post["descricao"] or "")[:120])
-
-                    with st.expander("👁️ Preview"):
-                        st.write(post["descricao"])
 
                 with col2:
                     st.write("📱", post["plataforma"])
@@ -184,11 +194,10 @@ def show_posts():
                         if st.button("🗑️ Excluir", key=f"de_{post['uuid']}"):
                             st.session_state["delete_confirm"] = post["uuid"]
 
-        # =========================
-        # CONFIRMAÇÃO DE EXCLUSÃO
-        # =========================
+        # Confirmação
         if "delete_confirm" in st.session_state:
             st.warning("⚠️ Confirmar exclusão do post selecionado")
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -209,9 +218,11 @@ def show_posts():
     # CRIAR POST
     # =========================
     with tab_create:
+
         st.markdown("## ➕ Criar Novo Post")
 
         with st.form("create_post"):
+
             plataforma = st.selectbox(
                 "Plataforma",
                 [p.capitalize() for p, e in ENABLED_PLATFORMS.items() if e]
@@ -225,25 +236,28 @@ def show_posts():
             st.markdown("### ⏰ Agendamento")
 
             col1, col2 = st.columns(2)
+
             with col1:
-                data = st.date_input("Data", min_value=datetime.now().date())
+                data = st.date_input(
+                    "Data",
+                    min_value=datetime.now().date()
+                )
+
             with col2:
-                minutos = st.slider(
-                    "Horário (drag & drop)",
-                    min_value=0,
-                    max_value=1439,
-                    value=600
+                horario_input = st.time_input(
+                    "Horário",
+                    step=300
                 )
 
             submit = st.form_submit_button("🚀 Criar Post")
 
             if submit:
-                horario = datetime.combine(
-                    data,
-                    datetime.min.time()
-                ) + timedelta(minutes=minutos)
 
-                if horario <= datetime.now():
+                tz = ZoneInfo(timezone)
+                horario = datetime.combine(data, horario_input)
+                horario = horario.replace(tzinfo=tz)
+
+                if horario <= datetime.now(tz):
                     st.error("Horário deve ser futuro")
                     return
 
@@ -262,6 +276,7 @@ def show_posts():
 
                 st.success("Post criado com sucesso!")
                 st.info("Status inicial: PENDING")
+                st.rerun()
 
 # =============================
 # Comentários
@@ -291,12 +306,12 @@ def show_settings():
 # Main
 # =============================
 def main():
-    page = show_sidebar()
+    page, timezone = show_sidebar()
 
     if page == "Dashboard":
         show_dashboard()
     elif page == "Posts":
-        show_posts()
+        show_posts(timezone)
     elif page == "Comentários":
         show_comments()
     else:

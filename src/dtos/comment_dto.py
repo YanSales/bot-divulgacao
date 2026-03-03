@@ -1,10 +1,14 @@
+from dataclasses import dataclass
 from datetime import datetime
-from src.dtos.base import BaseDTO
+from typing import Optional
 
 
-class CommentDTO(BaseDTO):
+@dataclass
+class CommentDTO:
     uuid: str
     post_uuid: str
-    texto: str
+    content: str
     status: str
-    criado_em: datetime
+    created_at: datetime
+    created_by: Optional[str] = None
+    platform: Optional[str] = "internal"
